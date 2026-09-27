@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projection Mapper</title>
+<style>
+/* ═══════════════════════════════════════════════════
+   CUSTOM PROPERTIES & RESET
+   ═══════════════════════════════════════════════════ */
+:root {
+  --bg-0: #07070e; --bg-1: #0c0c18; --bg-2: #111122;
+  --bg-3: #181832; --bg-input: #0a0a16;
+  --border: #1e1e3a; --border-hi: #2e2e55;
+  --accent: #6366f1; --accent-hi: #818cf8;
+  --accent-dim: rgba(99,102,241,.12); --accent-glow: rgba(99,102,241,.35);
+  --text: #e2e8f0; --text-2: #8890a8; --text-3: #555578;
+  --green: #34d399; --amber: #fbbf24; --red: #f87171;
+  --r: 8px; --r-sm: 5px; --tr: 160ms ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+  background:var(--bg-0);color:var(--text);font-size:13px}
+body{display:grid;grid-template-rows:50px 1fr 28px;animation:appIn .5s ease both}
+@keyframes appIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:9px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-hi)}
+
+/* ═══════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════ */
+header{display:flex;align-items:center;gap:4px;padding:0 14px;
+  background:linear-gradient(180deg,#10101e 0%,var(--bg-1) 100%);
+  border-bottom:1px solid var(--border);z-index:10}
+.logo{display:flex;align-items:center;gap:8px;margin-right:8px;font-weight:700;font-size:14px;letter-spacing:.3px}
+.logo-icon{color:var(--accent);font-size:18px}
+.toolbar-sep{width:1px;height:24px;background:var(--border);margin:0 6px}
+.flex-1{flex:1}
+button,.btn{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:6px 10px;cursor:pointer;font-size:12px;
+  font-family:inherit;white-space:nowrap;
+  transition:all var(--tr);display:inline-flex;align-items:center;gap:4px}
+button:hover{background:var(--bg-3);border-color:var(--border-hi);transform:translateY(-1px)}
+button:active{transform:translateY(0) scale(.97)}
+button.active{background:var(--accent);border-color:var(--accent);color:#fff;
+  box-shadow:0 0 14px var(--accent-glow)}
+.btn-accent{background:var(--accent)!important;border-color:var(--accent)!important;
+  color:#fff!important;font-weight:600;padding:6px 14px;
+  box-shadow:0 2px 12px var(--accent-glow)}
+.btn-accent:hover{background:var(--accent-hi)!important;box-shadow:0 4px 20px var(--accent-glow)}
+.btn-danger{color:var(--red)!important}
+.btn-danger:hover{background:rgba(248,113,113,.1)!important;border-color:rgba(248,113,113,.3)!important}
+kbd{display:inline-block;padding:0 4px;background:var(--bg-0);border:1px solid var(--border);
+  border-radius:3px;font-size:10px;font-family:inherit;color:var(--text-3);
+  line-height:1.5;margin-left:2px;pointer-events:none}
+
+/* ═══════════════════════════════════════════════════
+   MAIN LAYOUT
+   ═══════════════════════════════════════════════════ */
+main{display:grid;grid-template-columns:1fr 280px;overflow:hidden}
+#canvas-wrap{position:relative;background:var(--bg-0);overflow:hidden}
+#webgl,#overlay{position:absolute;inset:0;width:100%;height:100%;display:block}
+#overlay{cursor:default;z-index:1}
+#overlay.drawing{cursor:crosshair}
+
+/* ═══════════════════════════════════════════════════
+   SIDEBAR
+   ═══════════════════════════════════════════════════ */
+aside{background:linear-gradient(180deg,var(--bg-1) 0%,#0a0a14 100%);
+  border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel-section{padding:14px;flex-shrink:0}
+.panel-section.layers{flex:0 0 auto;max-height:45%;overflow:hidden;display:flex;flex-direction:column}
+.panel-section.props{flex:1;overflow-y:auto}
+.panel-divider{height:1px;background:var(--border);margin:0;flex-shrink:0}
+.panel-header{display:flex;align-items:center;justify-content:space-between;
+  font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);
+  font-weight:600;margin-bottom:10px}
+.badge{background:var(--accent-dim);color:var(--accent-hi);padding:1px 7px;
+  border-radius:9px;font-size:10px;font-weight:600}
+.layer-list{overflow-y:auto;display:flex;flex-direction:column;gap:2px;flex:1}
+.layer-item{display:flex;align-items:center;gap:8px;padding:7px 10px;
+  border-radius:var(--r-sm);cursor:pointer;transition:all var(--tr);
+  border:1px solid transparent;animation:fadeUp .2s ease both}
+.layer-item:hover{background:var(--bg-2)}
+.layer-item.active{background:var(--accent-dim);border-color:rgba(99,102,241,.25)}
+.layer-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  box-shadow:0 0 6px rgba(0,0,0,.4)}
+.layer-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.props-hint{color:var(--text-3);text-align:center;padding:30px 10px;line-height:1.7;font-size:12px}
+.prop-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--text-3);margin:14px 0 5px;font-weight:500}
+.prop-label:first-child{margin-top:0}
+.prop-input,.prop-select{width:100%;padding:8px 10px;background:var(--bg-input);
+  border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);
+  font-size:12px;font-family:inherit;transition:border-color var(--tr);outline:none}
+.prop-input:focus,.prop-select:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-dim)}
+.prop-color{width:100%;height:36px;padding:3px;cursor:pointer;background:var(--bg-input);
+  border:1px solid var(--border);border-radius:var(--r-sm);transition:border-color var(--tr)}
+.prop-color:hover{border-color:var(--border-hi)}
+.prop-range{width:100%;accent-color:var(--accent);height:6px;cursor:pointer}
+.prop-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px}
+.prop-actions button{justify-content:center}
+
+/* ═══════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════ */
+footer{display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:var(--bg-1);border-top:1px solid var(--border);font-size:11px;color:var(--text-2)}
+.status{display:flex;align-items:center;gap:7px}
+.status-dot{width:7px;height:7px;border-radius:50%;transition:background var(--tr)}
+.status-dot.ok{background:var(--green);box-shadow:0 0 6px rgba(52,211,153,.4)}
+.status-dot.warn{background:var(--amber);box-shadow:0 0 6px rgba(251,191,36,.4)}
+.status-dot.err{background:var(--red);box-shadow:0 0 6px rgba(248,113,113,.4)}
+.footer-sep{color:var(--text-3)}
+#diag-display{margin-left:auto;color:var(--amber);font-weight:500}
+#status-text{transition:opacity .2s ease}
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="logo"><span class="logo-icon">◈</span> Projection Mapper</div>
+  <div class="toolbar-sep"></div>
+  <button id="btn-rect" title="Rectángulo">▭ Rect<kbd>R</kbd></button>
+  <button id="btn-circle" title="Círculo">○ Circ<kbd>C</kbd></button>
+  <button id="btn-polygon" title="Polígono">⬟ Poly<kbd>P</kbd></button>
+  <button id="btn-draw" title="Dibujar forma libre">✎ Dibujar<kbd>D</kbd></button>
+  <div class="toolbar-sep"></div>
+  <button id="btn-image" title="Importar imagen">🖼 Imagen</button>
+  <button id="btn-video" title="Importar video">🎬 Video</button>
+  <div class="flex-1"></div>
+  <button id="btn-save" title="Guardar proyecto">💾</button>
+  <button id="btn-load" title="Cargar proyecto">📂</button>
+  <button id="btn-clear" class="btn-danger" title="Limpiar todo">🗑</button>
+  <div class="toolbar-sep"></div>
+  <button id="btn-project" class="btn-accent">▶ Proyectar</button>
+  <input type="file" id="image-input" accept="image/*" style="display:none">
+  <input type="file" id="video-input" accept="video/*" style="display:none">
+</header>
+
+<!-- ═══ MAIN ═══ -->
+<main>
+  <div id="canvas-wrap">
+    <canvas id="webgl"></canvas>
+    <canvas id="overlay"></canvas>
+  </div>
+  <aside>
+    <div class="panel-section layers">
+      <div class="panel-header"><span>Capas</span><span class="badge" id="layer-count">0</span></div>
+      <div class="layer-list" id="layer-list"></div>
+    </div>
+    <div class="panel-divider"></div>
+    <div class="panel-section props">
+      <div class="panel-header">Propiedades</div>
+      <div id="props-empty" class="props-hint">Selecciona una superficie<br>para editar sus propiedades</div>
+      <div id="props-content" style="display:none">
+        <label class="prop-label">Nombre</label>
+        <input type="text" class="prop-input" id="prop-name">
+        <label class="prop-label">Forma</label>
+        <select class="prop-select" id="prop-shape">
+          <option value="rect">Rectángulo</option>
+          <option value="circle">Círculo</option>
+          <option value="polygon">Polígono</option>
+          <option value="custom">Personalizada</option>
+        </select>
+        <label class="prop-label">Contenido</label>
+        <select class="prop-select" id="prop-content-type">
+          <option value="color">Color sólido</option>
+          <option value="gradient">Degradado</option>
+          <option value="image">Imagen</option>
+          <option value="video">Video</option>
+        </select>
+        <div id="prop-color-wrap">
+          <label class="prop-label">Color</label>
+          <input type="color" class="prop-color" id="prop-color" value="#6366f1">
+        </div>
+        <button id="prop-file-btn" style="display:none">📁 Cambiar archivo</button>
+        <label class="prop-label">Opacidad: <span id="prop-opacity-val" style="color:var(--accent);font-weight:600">100%</span></label>
+        <input type="range" class="prop-range" id="prop-opacity" min="0" max="100" value="100">
+        <div class="prop-actions">
+          <button id="prop-dup">⧉ Duplicar</button>
+          <button id="prop-del" class="btn-danger">✕ Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <span class="status"><span class="status-dot ok" id="status-dot"></span><span id="status-text">Listo</span></span>
+  <span class="flex-1"></span>
+  <span id="fps-display">60 FPS</span>
+  <span class="footer-sep">·</span>
+  <span id="surface-count">0 superficies</span>
+  <span id="diag-display"></span>
+</footer>
+
+<!-- ═══ THREE.JS ═══ -->
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ═══════════════════════════════════════════════════
+   GLOBAL STATE
+   ═══════════════════════════════════════════════════ */
+const state = {
+  surfaces: [],
+  selected: null,
+  mode: 'select',
+  drawPoints: [],
+  pixelRatio: 1,
+  projWin: null,
+  projStream: null,
+  projTimer: null,
+};
+const drag = { active: false, drawing: false, type: null, cornerIdx: -1, offset: {x:0,y:0}, startCorners: null };
+let vw = 0, vh = 0, frames = 0, fps = 60;
+let lastTick = performance.now(), lastAdjust = 0, statusTimeout = null;
+let fileTarget = null;
+const STORE_KEY = 'projection-mapper-project';
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const COLORS = ['#6366f1','#f472b6','#34d399','#fbbf24','#38bdf8','#a78bfa','#fb923c','#4ade80'];
+const escHtml = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const randColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+
+/* ═══════════════════════════════════════════════════
+   DOM REFERENCES
+   ═══════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const canvasWrap = $('canvas-wrap');
+const webgl = $('webgl');
+const overlay = $('overlay');
+const ctx = overlay.getContext('2d');
+
+/* ═══════════════════════════════════════════════════
+   THREE.JS SETUP
+   ═══════════════════════════════════════════════════ */
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(0, 1, 1, 0, 0.1, 10);
+camera.position.z = 1;
+const renderer = new THREE.WebGLRenderer({ canvas: webgl, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x000000, 1);
+const raycaster = new THREE.Raycaster();
+
+/* ═══════════════════════════════════════════════════
+   SURFACE CLASS
+   ═══════════════════════════════════════════════════ */
+class Surface {
+  constructor(opts = {}) {
+    this.id = opts.id || Math.random().toString(36).slice(2, 10);
+    this.name = opts.name || 'Superficie';
+    this.shapeType = opts.shapeType || 'rect';
+    const ox = (Math.random() - 0.5) * 0.12;
+    const oy = (Math.random() - 0.5) * 0.12;
+    this.corners = opts.corners || [
+      { x: 0.28 + ox, y: 0.28 + oy }, { x: 0.72 + ox, y: 0.28 + oy },
+      { x: 0.72 + ox, y: 0.72 + oy }, { x: 0.28 + ox, y: 0.72 + oy }
+    ];
+    this.polygonPoints = opts.polygonPoints || [];
+    this.content = opts.content || { type: 'color', value: '#6366f1' };
+    this.opacity = opts.opacity ?? 1;
+    this.visible = opts.visible ?? true;
+    this.texture = null;
+    this.videoEl = null;
+
+    // Geometry: quad with 4 vertices
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+    this.geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0,0, 1,0, 1,1, 0,1]), 2));
+    this.geometry.setIndex([0,1,2, 0,2,3]);
+
+    this.material = new THREE.MeshBasicMaterial({
+      transparent: true, side: THREE.DoubleSide, depthWrite: false
+    });
+    this.mesh = new THREE.Mesh(this.geometry, this.material);
+    this.mesh.userData.surface = this;
+
+    this.syncGeometry();
+    this.applyShape();
+    this.applyContent();
+    this.applyOpacity();
+    scene.add(this.mesh);
+  }
+
+  syncGeometry() {
+    const p = this.geometry.attributes.position.array;
+    for (let i = 0; i < 4; i++) {
+      p[i*3]   = this.corners[i].x;
+      p[i*3+1] = 1 - this.corners[i].y;
+      p[i*3+2] = 0;
+    }
+    this.geometry.attributes.position.needsUpdate = true;
+    this.geometry.computeBoundingSphere();
+  }
+
+  applyShape() {
+    if (this.material.alphaMap) { this.material.alphaMap.dispose(); this.material.alphaMap = null; }
+    if (this.shapeType === 'circle') {
+      this.material.alphaMap = this._circleMask();
+    } else if ((this.shapeType === 'polygon' || this.shapeType === 'custom') && this.polygonPoints.length >= 3) {
+      this.material.alphaMap = this._polyMask();
+    }
+    this.material.needsUpdate = true;
+  }
+
+  applyContent() {
+    const mat = this.material;
+    if (this.videoEl) { this.videoEl.pause(); this.videoEl.src = ''; this.videoEl = null; }
+    if (this.texture) { this.texture.dispose(); this.texture = null; }
+    mat.map = null; mat.color.set('#ffffff');
+
+    if (this.content.type === 'color') {
+      mat.color.set(this.content.value || '#ffffff');
+    } else if (this.content.type === 'gradient') {
+      this.texture = this._gradTex(this.content.value || '#6366f1');
+      mat.map = this.texture;
+    } else if (this.content.type === 'image' && this.content.value) {
+      this.texture = new THREE.TextureLoader().load(this.content.value, () => { mat.needsUpdate = true; });
+      this.texture.colorSpace = THREE.SRGBColorSpace;
+      mat.map = this.texture;
+    } else if (this.content.type === 'video' && this.content.value) {
+      const v = document.createElement('video');
+      v.src = this.content.value; v.loop = true; v.muted = true;
+      v.playsInline = true; v.autoplay = true;
+      this.videoEl = v;
+      v.play().catch(() => {});
+      this.texture = new THREE.VideoTexture(v);
+      this.texture.colorSpace = THREE.SRGBColorSpace;
+      mat.map = this.texture;
+    }
+    mat.needsUpdate = true;
+  }
+
+  applyOpacity() {
+    this.material.opacity = this.opacity;
+    this.material.visible = this.visible;
+  }
+
+  dispose() {
+    if (this.videoEl) { this.videoEl.pause(); this.videoEl.src = ''; }
+    if (this.texture) this.texture.dispose();
+    if (this.material.alphaMap) this.material.alphaMap.dispose();
+    this.geometry.dispose(); this.material.dispose();
+    scene.remove(this.mesh);
+  }
+
+  serialize() {
+    return {
+      id: this.id, name: this.name, shapeType: this.shapeType,
+      corners: this.corners.map(c => ({x:c.x, y:c.y})),
+      polygonPoints: this.polygonPoints.map(p => ({x:p.x, y:p.y})),
+      content: this.content.type === 'video' ? {type:'color', value:'#6366f1'} : {...this.content},
+      opacity: this.opacity, visible: this.visible,
+    };
+  }
+
+  /* --- Mask generators --- */
+  _circleMask() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d');
+    x.fillStyle = '#000'; x.fillRect(0,0,256,256);
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(128,128,126,0,Math.PI*2); x.fill();
+    return new THREE.CanvasTexture(c);
+  }
+  _polyMask() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d');
+    x.fillStyle = '#000'; x.fillRect(0,0,256,256);
+    x.fillStyle = '#fff'; x.beginPath();
+    this.polygonPoints.forEach((p,i) => {
+      i === 0 ? x.moveTo(p.x*256, p.y*256) : x.lineTo(p.x*256, p.y*256);
+    });
+    x.closePath(); x.fill();
+    return new THREE.CanvasTexture(c);
+  }
+  _gradTex(color) {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0,0,0,256);
+    g.addColorStop(0, color); g.addColorStop(1, '#000');
+    x.fillStyle = g; x.fillRect(0,0,256,256);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   SURFACE MANAGEMENT
+   ═══════════════════════════════════════════════════ */
+function defaultPoly() {
+  const pts = [];
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI/2 + i * 2 * Math.PI / 5;
+    pts.push({ x: .5 + .5*Math.cos(a), y: .5 + .5*Math.sin(a) });
+  }
+  return pts;
+}
+
+function addSurface(s) {
+  state.surfaces.push(s);
+  select(s);
+  updateCounts();
+  renderList();
+}
+
+function select(s) {
+  state.selected = s;
+  renderPanel();
+  renderList();
+}
+function deselect() { state.selected = null; renderPanel(); renderList(); }
+
+function createRect() {
+  addSurface(new Surface({ name: 'Rectángulo ' + (state.surfaces.length+1), shapeType:'rect', content:{type:'color', value:randColor()} }));
+  flash('Rectángulo creado');
+}
+function createCircle() {
+  addSurface(new Surface({ name: 'Círculo ' + (state.surfaces.length+1), shapeType:'circle', content:{type:'color', value:randColor()} }));
+  flash('Círculo creado');
+}
+function createPolygon() {
+  const s = new Surface({ name: 'Polígono ' + (state.surfaces.length+1), shapeType:'polygon', content:{type:'color', value:randColor()} });
+  s.polygonPoints = defaultPoly(); s.applyShape();
+  addSurface(s);
+  flash('Polígono creado');
+}
+
+function duplicateSurface(s) {
+  const c = new Surface({
+    name: s.name + ' copia', shapeType: s.shapeType,
+    corners: s.corners.map(c => ({x: c.x + 0.03, y: c.y + 0.03})),
+    polygonPoints: s.polygonPoints.map(p => ({...p})),
+    content: {type: s.content.type, value: s.content.value},
+    opacity: s.opacity, visible: s.visible,
+  });
+  if (c.shapeType === 'polygon' || c.shapeType === 'custom') c.applyShape();
+  addSurface(c);
+  flash('Superficie duplicada');
+}
+
+function deleteSurface(s) {
+  const i = state.surfaces.indexOf(s);
+  if (i < 0) return;
+  s.dispose(); state.surfaces.splice(i, 1);
+  if (state.selected === s) deselect();
+  updateCounts(); renderList();
+  flash('Superficie eliminada');
+}
+
+function clearAll() {
+  state.surfaces.forEach(s => s.dispose());
+  state.surfaces = [];
+  deselect(); updateCounts(); renderList();
+  flash('Todo limpiado');
+}
+
+/* ═══════════════════════════════════════════════════
+   PERSISTENCE
+   ═══════════════════════════════════════════════════ */
+function saveProject() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ version:1, surfaces: state.surfaces.map(s => s.serialize()) }));
+    flash('Proyecto guardado');
+  } catch(e) { flash('Error al guardar: ' + e.message, 'err'); }
+}
+function autoSave() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ version:1, surfaces: state.surfaces.map(s => s.serialize()) })); } catch(e) {}
+}
+function loadProject() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) { flash('No hay proyecto guardado', 'warn'); return; }
+    const data = JSON.parse(raw);
+    state.surfaces.forEach(s => s.dispose()); state.surfaces = [];
+    (data.surfaces || []).forEach(d => {
+      const s = new Surface(d);
+      if ((s.shapeType === 'polygon' || s.shapeType === 'custom') && s.polygonPoints.length >= 3) s.applyShape();
+      state.surfaces.push(s);
+    });
+    deselect(); updateCounts(); renderList();
+    flash('Proyecto cargado');
+  } catch(e) { flash('Error al cargar: ' + e.message, 'err'); }
+}
+
+/* ═══════════════════════════════════════════════════
+   MEDIA FILES
+   ═══════════════════════════════════════════════════ */
+function handleImage(file, action) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (action === 'apply' && state.selected) {
+      state.selected.content = { type:'image', value: reader.result };
+      state.selected.applyContent(); renderPanel(); renderList();
+      flash('Imagen aplicada');
+    } else {
+      addSurface(new Surface({ name:'Imagen', shapeType:'rect', content:{type:'image', value: reader.result} }));
+      flash('Imagen añadida');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+function handleVideo(file, action) {
+  const url = URL.createObjectURL(file);
+  if (action === 'apply' && state.selected) {
+    state.selected.content = { type:'video', value: url };
+    state.selected.applyContent(); renderPanel(); renderList();
+    flash('Video aplicado');
+  } else {
+    addSurface(new Surface({ name:'Video', shapeType:'rect', content:{type:'video', value: url} }));
+    flash('Video añadido');
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   PROJECTOR
+   ═══════════════════════════════════════════════════ */
+function openProjector() {
+  if (state.projWin && !state.projWin.closed) state.projWin.close();
+  const w = window.open('', '_blank', `width=${screen.width},height=${screen.height},left=0,top=0,menubar=no,toolbar=no`);
+  if (!w) { flash('Permite ventanas emergentes', 'err'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><style>
+    html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+    video{width:100vw;height:100vh;object-fit:fill;display:block}
+    .hint{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+      color:#333;font:12px/1 system-ui;pointer-events:none;
+      transition:opacity 2s ease;opacity:1}
+  </style></head><body>
+  <video id="v" autoplay muted playsinline></video>
+  <div class="hint" id="h">F = pantalla completa · ESC = cerrar</div>
+  <script>
+    setTimeout(()=>{const h=document.getElementById('h');if(h)h.style.opacity='0'},4000);
+    document.addEventListener('keydown',e=>{
+      if(e.key==='f'||e.key==='F'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+      if(e.key==='Escape')window.close();
+    });
+  <\/script></body></html>`);
+  w.document.close();
+
+  setTimeout(() => {
+    if (!w || w.closed) return;
+    const video = w.document.getElementById('v'); if (!video) return;
+    try {
+      state.projStream = webgl.captureStream(60);
+      video.srcObject = state.projStream;
+      video.play().catch(() => {});
+      flash('Proyector activo — mueve la ventana al proyector');
+    } catch(e) { flash('captureStream no soportado', 'err'); }
+  }, 250);
+
+  state.projWin = w;
+  state.projTimer = setInterval(() => { if (w.closed) closeProjector(); }, 500);
+  updateProjBtn();
+}
+function closeProjector() {
+  if (state.projStream) { state.projStream.getTracks().forEach(t => t.stop()); state.projStream = null; }
+  if (state.projTimer) { clearInterval(state.projTimer); state.projTimer = null; }
+  if (state.projWin && !state.projWin.closed) state.projWin.close();
+  state.projWin = null;
+  updateProjBtn();
+}
+function updateProjBtn() {
+  $('btn-project').textContent = (state.projWin && !state.projWin.closed) ? '■ Detener' : '▶ Proyectar';
+}
+
+/* ═══════════════════════════════════════════════════
+   POINTER INTERACTION
+   ═══════════════════════════════════════════════════ */
+function cornerHit(s, mx, my) {
+  for (let i = 0; i < 4; i++) {
+    if (Math.hypot(mx - s.corners[i].x * vw, my - s.corners[i].y * vh) < 14) return i;
+  }
+  return -1;
+}
+
+overlay.addEventListener('pointerdown', e => {
+  const r = overlay.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+
+  if (state.mode === 'draw') {
+    drag.drawing = true;
+    state.drawPoints = [{ x: mx/vw, y: my/vh }];
+    overlay.setPointerCapture(e.pointerId);
+    return;
+  }
+
+  // Check corner drag on selected surface first
+  if (state.selected) {
+    const ci = cornerHit(state.selected, mx, my);
+    if (ci >= 0) {
+      drag.active = true; drag.type = 'corner'; drag.cornerIdx = ci;
+      overlay.setPointerCapture(e.pointerId);
+      return;
+    }
+  }
+
+  // Raycast to find surface
+  const ndc = new THREE.Vector2((mx/vw)*2 - 1, -(my/vh)*2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(state.surfaces.filter(s => s.visible).map(s => s.mesh), false);
+
+  if (hits.length > 0) {
+    const s = hits[0].object.userData.surface;
+    select(s);
+    drag.active = true; drag.type = 'move';
+    drag.startCorners = s.corners.map(c => ({...c}));
+    drag.offset = { x: mx/vw, y: my/vh };
+  } else {
+    deselect();
+  }
+  overlay.setPointerCapture(e.pointerId);
+});
+
+overlay.addEventListener('pointermove', e => {
+  const r = overlay.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const nx = mx/vw, ny = my/vh;
+
+  // Drawing mode
+  if (state.mode === 'draw' && drag.drawing) {
+    state.drawPoints.push({ x: nx, y: ny });
+    return;
+  }
+
+  // Dragging
+  if (drag.active && state.selected) {
+    const s = state.selected;
+    if (drag.type === 'corner') {
+      s.corners[drag.cornerIdx] = { x: nx, y: ny };
+      s.syncGeometry();
+    } else if (drag.type === 'move') {
+      const dx = nx - drag.offset.x, dy = ny - drag.offset.y;
+      s.corners = drag.startCorners.map(c => ({ x: c.x + dx, y: c.y + dy }));
+      s.syncGeometry();
+    }
+    return;
+  }
+
+  // Cursor feedback
+  if (state.mode === 'draw') { overlay.style.cursor = 'crosshair'; return; }
+  if (state.selected && cornerHit(state.selected, mx, my) >= 0) {
+    overlay.style.cursor = 'grab';
+  } else {
+    overlay.style.cursor = 'default';
+  }
+});
+
+function endPointer() {
+  if (state.mode === 'draw' && drag.drawing) { drag.drawing = false; finishDraw(); }
+  drag.active = false; drag.type = null; drag.cornerIdx = -1; drag.startCorners = null;
+}
+overlay.addEventListener('pointerup', endPointer);
+overlay.addEventListener('pointercancel', endPointer);
+
+function finishDraw() {
+  const pts = state.drawPoints; state.drawPoints = [];
+  if (pts.length < 3) { flash('Dibujo cancelado (muy pocos puntos)', 'warn'); return; }
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const [minX, maxX] = [Math.min(...xs), Math.max(...xs)];
+  const [minY, maxY] = [Math.min(...ys), Math.max(...ys)];
+  const w = Math.max(maxX - minX, 0.01), h = Math.max(maxY - minY, 0.01);
+  const polyPts = pts.map(p => ({ x: (p.x - minX)/w, y: (p.y - minY)/h }));
+  const s = new Surface({
+    name: 'Forma ' + (state.surfaces.length+1), shapeType: 'custom',
+    corners: [{x:minX,y:minY},{x:maxX,y:minY},{x:maxX,y:maxY},{x:minX,y:maxY}],
+    polygonPoints: polyPts,
+    content: { type:'color', value: randColor() },
+  });
+  addSurface(s);
+  flash('Forma dibujada');
+}
+
+/* ═══════════════════════════════════════════════════
+   OVERLAY (2D canvas)
+   ═══════════════════════════════════════════════════ */
+function drawOverlay() {
+  ctx.clearRect(0, 0, vw, vh);
+
+  // Dot grid
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  const step = Math.min(vw, vh) / 16;
+  for (let x = step; x < vw; x += step) {
+    for (let y = step; y < vh; y += step) {
+      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Selected surface outline + handles
+  const s = state.selected;
+  if (s) {
+    const pts = s.corners.map(c => ({ x: c.x*vw, y: c.y*vh }));
+
+    // Outline
+    ctx.strokeStyle = 'rgba(99,102,241,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    pts.forEach((p,i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.closePath(); ctx.stroke();
+
+    // Corner handles with glow
+    pts.forEach(p => {
+      ctx.save();
+      ctx.shadowColor = 'rgba(99,102,241,0.6)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#6366f1';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.stroke();
+    });
+  }
+
+  // Draw trail
+  if (state.mode === 'draw' && state.drawPoints.length > 1) {
+    ctx.strokeStyle = 'rgba(99,102,241,0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    state.drawPoints.forEach((p,i) => {
+      i === 0 ? ctx.moveTo(p.x*vw, p.y*vh) : ctx.lineTo(p.x*vw, p.y*vh);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   UI: PANEL & LIST
+   ═══════════════════════════════════════════════════ */
+function renderPanel() {
+  const s = state.selected;
+  $('props-empty').style.display = s ? 'none' : '';
+  $('props-content').style.display = s ? '' : 'none';
+  if (!s) return;
+
+  $('prop-name').value = s.name;
+  $('prop-shape').value = s.shapeType;
+  $('prop-content-type').value = s.content.type;
+
+  const isColorish = s.content.type === 'color' || s.content.type === 'gradient';
+  $('prop-color-wrap').style.display = isColorish ? '' : 'none';
+  $('prop-file-btn').style.display = isColorish ? 'none' : '';
+  if (isColorish) $('prop-color').value = s.content.value || '#6366f1';
+
+  $('prop-opacity').value = Math.round(s.opacity * 100);
+  $('prop-opacity-val').textContent = Math.round(s.opacity * 100) + '%';
+}
+
+function renderList() {
+  const list = $('layer-list');
+  list.innerHTML = '';
+  state.surfaces.forEach((s, idx) => {
+    const el = document.createElement('div');
+    el.className = 'layer-item' + (state.selected === s ? ' active' : '');
+    el.style.animationDelay = (idx * 30) + 'ms';
+    const dotColor = s.content.type === 'color' || s.content.type === 'gradient' ? s.content.value : '#888';
+    el.innerHTML = `<span class="layer-dot" style="background:${escHtml(dotColor)}"></span><span class="layer-name">${escHtml(s.name)}</span>`;
+    el.addEventListener('click', () => select(s));
+    list.appendChild(el);
+  });
+  $('layer-count').textContent = state.surfaces.length;
+}
+
+function updateCounts() {
+  $('surface-count').textContent = state.surfaces.length + ' superficie' + (state.surfaces.length === 1 ? '' : 's');
+  $('layer-count').textContent = state.surfaces.length;
+}
+
+/* ═══════════════════════════════════════════════════
+   STATUS BAR
+   ═══════════════════════════════════════════════════ */
+function flash(msg, level = 'ok') {
+  const dot = $('status-dot'), txt = $('status-text');
+  txt.textContent = msg;
+  dot.className = 'status-dot ' + (level === 'warn' ? 'warn' : level === 'err' ? 'err' : 'ok');
+  if (statusTimeout) clearTimeout(statusTimeout);
+  statusTimeout = setTimeout(() => { txt.textContent = 'Listo'; dot.className = 'status-dot ok'; }, 3500);
+}
+
+/* ═══════════════════════════════════════════════════
+   AUTO-OPTIMIZATION & DIAGNOSTICS
+   ═══════════════════════════════════════════════════ */
+function fpsTick() {
+  const now = performance.now();
+  fps = Math.round(frames / ((now - lastTick) / 1000));
+  frames = 0; lastTick = now;
+  $('fps-display').textContent = fps + ' FPS';
+
+  if (now - lastAdjust > 3000) {
+    if (fps < 45 && state.pixelRatio > 0.5) {
+      state.pixelRatio = Math.max(0.5, state.pixelRatio * 0.9);
+      renderer.setPixelRatio(state.pixelRatio * DPR);
+      lastAdjust = now;
+      flash('Auto-optimización: calidad ' + Math.round(state.pixelRatio*100) + '%', 'warn');
+    } else if (fps > 58 && state.pixelRatio < 1.0) {
+      state.pixelRatio = Math.min(1.0, state.pixelRatio * 1.05);
+      renderer.setPixelRatio(state.pixelRatio * DPR);
+      lastAdjust = now;
+    }
+  }
+}
+
+function diagnostics() {
+  const n = state.surfaces.length;
+  const vids = state.surfaces.filter(s => s.content.type === 'video' && s.videoEl).length;
+  const issues = [];
+  if (n > 12) issues.push(n + ' superficies');
+  if (vids > 3) issues.push(vids + ' videos');
+  $('diag-display').textContent = issues.length ? '⚠ ' + issues.join(' · ') : '';
+}
+
+/* ═══════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+   ═══════════════════════════════════════════════════ */
+function isTyping() { const t = document.activeElement?.tagName; return t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA'; }
+
+window.addEventListener('keydown', e => {
+  if (isTyping()) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') createRect();
+  else if (k === 'c') createCircle();
+  else if (k === 'p') createPolygon();
+  else if (k === 'd') toggleDraw();
+  else if (k === 'delete' || k === 'backspace') { if (state.selected) deleteSurface(state.selected); }
+  else if (k === 'escape') { if (state.mode === 'draw') toggleDraw(); else deselect(); }
+  else if (k === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveProject(); }
+});
+
+function toggleDraw() {
+  state.mode = state.mode === 'draw' ? 'select' : 'draw';
+  state.drawPoints = [];
+  $('btn-draw').classList.toggle('active', state.mode === 'draw');
+  overlay.classList.toggle('drawing', state.mode === 'draw');
+  flash(state.mode === 'draw' ? 'Modo dibujo activado' : 'Modo selección');
+}
+
+/* ═══════════════════════════════════════════════════
+   PANEL EVENT LISTENERS
+   ═══════════════════════════════════════════════════ */
+$('prop-name').addEventListener('input', () => {
+  if (state.selected) { state.selected.name = $('prop-name').value; renderList(); }
+});
+$('prop-shape').addEventListener('change', () => {
+  const s = state.selected; if (!s) return;
+  s.shapeType = $('prop-shape').value;
+  if (s.shapeType === 'polygon' && s.polygonPoints.length < 3) s.polygonPoints = defaultPoly();
+  if (s.shapeType === 'rect') s.polygonPoints = [];
+  s.applyShape();
+});
+$('prop-content-type').addEventListener('change', () => {
+  const s = state.selected; if (!s) return;
+  const t = $('prop-content-type').value;
+  if (t === 'color') { s.content = {type:'color', value:'#6366f1'}; s.applyContent(); renderPanel(); renderList(); }
+  else if (t === 'gradient') { s.content = {type:'gradient', value:'#6366f1'}; s.applyContent(); renderPanel(); renderList(); }
+  else if (t === 'image') { fileTarget = {type:'image', action:'apply'}; $('image-input').click(); }
+  else if (t === 'video') { fileTarget = {type:'video', action:'apply'}; $('video-input').click(); }
+});
+$('prop-color').addEventListener('input', () => {
+  const s = state.selected; if (!s) return;
+  s.content.value = $('prop-color').value;
+  s.applyContent(); renderList();
+});
+$('prop-file-btn').addEventListener('click', () => {
+  const s = state.selected; if (!s) return;
+  if (s.content.type === 'image') { fileTarget = {type:'image', action:'apply'}; $('image-input').click(); }
+  else if (s.content.type === 'video') { fileTarget = {type:'video', action:'apply'}; $('video-input').click(); }
+});
+$('prop-opacity').addEventListener('input', () => {
+  const s = state.selected; if (!s) return;
+  s.opacity = $('prop-opacity').value / 100;
+  s.applyOpacity();
+  $('prop-opacity-val').textContent = $('prop-opacity').value + '%';
+});
+$('prop-dup').addEventListener('click', () => { if (state.selected) duplicateSurface(state.selected); });
+$('prop-del').addEventListener('click', () => { if (state.selected) deleteSurface(state.selected); });
+
+/* ═══════════════════════════════════════════════════
+   TOOLBAR EVENT LISTENERS
+   ═══════════════════════════════════════════════════ */
+$('btn-rect').addEventListener('click', createRect);
+$('btn-circle').addEventListener('click', createCircle);
+$('btn-polygon').addEventListener('click', createPolygon);
+$('btn-draw').addEventListener('click', toggleDraw);
+$('btn-image').addEventListener('click', () => { fileTarget = {type:'image', action:'create'}; $('image-input').click(); });
+$('btn-video').addEventListener('click', () => { fileTarget = {type:'video', action:'create'}; $('video-input').click(); });
+$('btn-save').addEventListener('click', saveProject);
+$('btn-load').addEventListener('click', loadProject);
+$('btn-clear').addEventListener('click', () => { if (confirm('¿Eliminar todas las superficies?')) clearAll(); });
+$('btn-project').addEventListener('click', () => {
+  (state.projWin && !state.projWin.closed) ? closeProjector() : openProjector();
+});
+
+$('image-input').addEventListener('change', e => {
+  if (e.target.files?.[0]) handleImage(e.target.files[0], fileTarget?.action || 'create');
+  e.target.value = '';
+});
+$('video-input').addEventListener('change', e => {
+  if (e.target.files?.[0]) handleVideo(e.target.files[0], fileTarget?.action || 'create');
+  e.target.value = '';
+});
+
+/* ═══════════════════════════════════════════════════
+   RESIZE & RENDER LOOP
+   ═══════════════════════════════════════════════════ */
+function resize() {
+  vw = canvasWrap.clientWidth;
+  vh = canvasWrap.clientHeight;
+  renderer.setSize(vw, vh, false);
+  renderer.setPixelRatio(state.pixelRatio * DPR);
+  overlay.width = vw * DPR;
+  overlay.height = vh * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+  drawOverlay();
+  frames++;
+}
+
+/* ═══════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════ */
+resize();
+createRect();
+updateCounts();
+renderList();
+setInterval(fpsTick, 1000);
+setInterval(diagnostics, 1000);
+setInterval(autoSave, 30000);
+flash('Listo — crea formas y presiona ▶ Proyectar');
+animate();
+</script>
+</body>
+</html>
